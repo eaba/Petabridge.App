@@ -206,9 +206,11 @@ partial class Build : NukeBuild
     .DependsOn(DockerLogin, Docker, PushImage);
 
     Target PublishNuget => _ => _
+    .Unlisted()
     .Description("Publishes .nuget packages to Nuget")
-    .Requires(() => NugetPublishUrl)
-    .Requires(() => !NugetKey.IsNullOrEmpty())
+    .After(CreateNuget, SignClient)
+    .OnlyWhenDynamic(() => !NugetPublishUrl.IsNullOrEmpty())
+    .OnlyWhenDynamic(() => !NugetKey.IsNullOrEmpty())
     .Executes(() =>
     {
         var packages = OutputNuget.GlobFiles("*.nupkg", "*.symbols.nupkg").NotNull();
@@ -265,8 +267,9 @@ partial class Build : NukeBuild
     Target SignClient => _ => _
         .Unlisted()
         .Before(PublishNuget)
-        .Requires(() => !SignClientSecret.IsNullOrEmpty())
-        .Requires(() => !SignClientUser.IsNullOrEmpty())
+        .After(CreateNuget)
+        .OnlyWhenDynamic(() => !SignClientSecret.IsNullOrEmpty())
+        .OnlyWhenDynamic(() => !SignClientUser.IsNullOrEmpty())
         .Executes(() =>
         {
             var assemblies = OutputNuget.GlobFiles("*.nupkg");
@@ -289,10 +292,8 @@ partial class Build : NukeBuild
             }
         });
    
-    Target SignPackages => _ => _
-    .DependsOn(CreateNuget, SignClient);
     Target Nuget => _ => _
-        .DependsOn(SignPackages, PublishNuget);
+        .DependsOn(CreateNuget, SignClient, PublishNuget);
     private AbsolutePath[] GetDockerProjects()
     {
         return SourceDirectory.GlobFiles("**/Dockerfile")// folders with Dockerfiles in it
@@ -356,7 +357,7 @@ partial class Build : NukeBuild
             .SetLogLevel(DocFXLogLevel.Verbose));
         });
 
-    Target DocFxBuild => _ => _
+    Target DocFx => _ => _
         .Description("Builds Documentation")
         .DependsOn(DocsMetadata)
         .Executes(() => 
@@ -366,12 +367,10 @@ partial class Build : NukeBuild
             .SetLogLevel(DocFXLogLevel.Verbose));
         });
 
-    Target BuildAndServeDocs => _ => _
-    .DependsOn(DocFxBuild, ServeDocs);
-
     Target ServeDocs => _ => _
-        .Description("Build and preview documentation")
-        .Executes(() => DocFXServe(s=>s.SetFolder(DocFxDir).SetPort(Port)));
+         .Description("Build and preview documentation")
+         .DependsOn(DocFx)
+         .Executes(() => DocFXServe(s => s.SetFolder(DocFxDir).SetPort(Port)));
 
     Target Compile => _ => _
         .Description("Builds all the projects in the solution")
